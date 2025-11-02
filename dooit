@@ -1,0 +1,1487 @@
+<!--
+Dooit - Static Online Exam Portal (Single File)
+------------------------------------------------
+How to use:
+1. Save this file as index.html and open in a browser, or paste into CodePen (HTML panel).
+2. All data (users, sessions, leaderboard, results) are stored locally using LocalStorage with prefix "dooit_".
+3. To reset stored data for testing open DevTools > Application > Local Storage and remove keys starting with "dooit_" or run `localStorage.clear()` (careful, clears other apps too).
+
+Notes / Expansion:
+- Expand question bank in the `QUESTION_BANK` object inside the script. Each category has an array of question objects.
+- To integrate with a backend or Firebase later: replace LocalStorage operations (get/set) with API calls and secure authentication on backend. Search comments like "// TODO: backend" in the JS.
+- This is a client-only demo, no servers required. Fonts and icons loaded from Google Fonts and Font Awesome only.
+
+Accessibility: semantic HTML, ARIA roles, keyboard focus styles provided.
+*/
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Dooit • Online Exam Portal</title>
+
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
+
+<!-- Font Awesome (icons only) -->
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" integrity="sha512-..." crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+<style>
+/* -------------------------
+   Dooit Styles (embedded)
+   -------------------------
+   - Two themes: light (default) and dark-neon
+   - Glassmorphism login/signup card
+   - Responsive layout (mobile-first)
+*/
+
+/* Reset & base */
+:root{
+  --brand-blue: #0b6ef6;
+  --muted: #6b7280;
+  --glass-bg: rgba(255,255,255,0.08);
+  --glass-border: rgba(255,255,255,0.12);
+  --neon-cyan: #00f0ff;
+  --neon-magenta: #ff2d95;
+  --bg-dark: #041025;
+  --bg-light: #f5f8ff;
+  --card-radius: 14px;
+  --transition: 280ms cubic-bezier(.2,.9,.3,1);
+  --focus-ring: 0 0 0 4px rgba(11,110,246,0.12);
+  --prefix: "dooit_";
+}
+
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:"Poppins",system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
+  background: radial-gradient(1200px 600px at 10% 10%, rgba(11,110,246,0.07), transparent 10%),
+              radial-gradient(900px 400px at 90% 90%, rgba(34,211,238,0.03), transparent 10%),
+              var(--bg-light);
+  color: #111827;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  transition: background var(--transition), color var(--transition);
+  padding:20px;
+}
+
+/* Dark neon theme */
+body.theme-dark{
+  background: linear-gradient(180deg,#00101b 0%, #021018 100%);
+  color:#e6f6ff;
+}
+
+/* App container */
+.app{
+  max-width:1100px;
+  margin:24px auto;
+  display:grid;
+  grid-template-columns: 1fr;
+  gap:20px;
+}
+
+/* Header */
+.header{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+.logo{
+  width:56px;height:56px;border-radius:12px;
+  display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--brand-blue),#59e);
+  color:white;font-weight:700;font-family:Orbitron, monospace;
+  box-shadow: 0 6px 18px rgba(11,110,246,0.18), inset 0 -6px 14px rgba(255,255,255,0.06);
+}
+.title{
+  font-family:Orbitron, monospace;
+  font-weight:700;
+  letter-spacing:0.6px;
+  font-size:1.25rem;
+}
+.header-actions{display:flex;gap:8px;align-items:center}
+
+/* Theme toggle */
+.theme-toggle{
+  display:inline-flex;align-items:center;gap:8px;padding:8px;border-radius:999px;
+  background:transparent;border:1px solid rgba(0,0,0,0.06);
+  cursor:pointer;transition:all var(--transition);color:var(--muted);
+}
+.theme-toggle:focus{outline:none;box-shadow:var(--focus-ring)}
+.theme-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:8px}
+
+/* Card common */
+.card{
+  background:linear-gradient(135deg,rgba(255,255,255,0.5),rgba(255,255,255,0.35));
+  border-radius:var(--card-radius);
+  padding:18px;
+  box-shadow: 0 6px 18px rgba(12,28,56,0.06);
+  transition:transform var(--transition), box-shadow var(--transition), background var(--transition);
+}
+body.theme-dark .card{
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border: 1px solid rgba(255,255,255,0.04);
+  box-shadow: 0 12px 30px rgba(0,255,240,0.03), inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+/* Glass auth container */
+.auth-wrap{
+  display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:center;
+}
+@media (max-width:880px){ .auth-wrap{grid-template-columns:1fr} }
+
+.glass{
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
+  border-radius:16px;
+  padding:24px;
+  backdrop-filter: blur(8px) saturate(120%);
+  border: 1px solid rgba(255,255,255,0.08);
+  box-shadow: 0 8px 34px rgba(2,6,23,0.12);
+  position:relative;overflow:hidden;
+}
+body.theme-dark .glass{
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border: 1px solid rgba(255,255,255,0.04);
+}
+
+/* Form */
+.form-row{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+label{font-size:0.85rem;color:var(--muted)}
+input[type="text"], input[type="email"], input[type="password"], select{
+  padding:12px 14px;border-radius:10px;border:1px solid rgba(15,23,42,0.06);
+  font-size:0.95rem;transition:box-shadow var(--transition),border-color var(--transition);
+  background:transparent;
+}
+input:focus{outline:none;box-shadow:var(--focus-ring);border-color:var(--brand-blue)}
+.small{font-size:0.85rem;color:var(--muted)}
+
+/* Primary button */
+.btn{
+  display:inline-flex;align-items:center;gap:10px;padding:10px 14px;border-radius:12px;border:0;cursor:pointer;
+  background:linear-gradient(90deg,var(--brand-blue),#5bd0ff);color:white;font-weight:600;
+  box-shadow: 0 10px 30px rgba(11,110,246,0.12);
+  transition:transform var(--transition), box-shadow var(--transition), opacity var(--transition);
+}
+.btn:active{transform:translateY(1px)}
+.btn.ghost{background:transparent;color:var(--brand-blue);border:1px solid rgba(11,110,246,0.12);box-shadow:none}
+
+/* Dashboard grid */
+.controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.grid{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
+}
+@media (max-width:960px){ .grid{grid-template-columns:repeat(2,1fr)} }
+@media (max-width:520px){ .grid{grid-template-columns:1fr} }
+
+/* Test cards */
+.test-card{
+  border-radius:12px;padding:16px;background:linear-gradient(180deg,rgba(255,255,255,0.96),white);
+  display:flex;flex-direction:column;gap:10px;cursor:pointer;border:1px solid rgba(11,110,246,0.06);
+  transition:transform var(--transition), box-shadow var(--transition);
+}
+.test-card:hover{transform:translateY(-6px);box-shadow:0 20px 40px rgba(11,110,246,0.08)}
+body.theme-dark .test-card{
+  background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));
+  border:1px solid rgba(255,255,255,0.03);
+}
+
+/* Quiz area */
+.quiz-wrap{display:grid;grid-template-columns: 1fr 320px;gap:18px}
+@media (max-width:980px){ .quiz-wrap{grid-template-columns:1fr} }
+
+.question-card{
+  padding:18px;border-radius:12px;min-height:180px;position:relative;
+  transition:box-shadow var(--transition), transform var(--transition);
+  border:1px solid rgba(0,0,0,0.04);
+}
+body.theme-dark .question-card{border:1px solid rgba(255,255,255,0.03)}
+
+.options{display:grid;gap:12px;margin-top:12px}
+.option{
+  padding:12px;border-radius:10px;border:1px solid rgba(11,110,246,0.08);
+  cursor:pointer;display:flex;align-items:center;gap:10px;transition:transform var(--transition), box-shadow var(--transition), background var(--transition);
+  background:transparent;
+}
+.option:hover{transform:translateY(-4px);box-shadow:0 8px 20px rgba(11,110,246,0.06)}
+.option[aria-pressed="true"]{box-shadow:0 12px 28px rgba(11,110,246,0.12)}
+.option.correct{background:linear-gradient(90deg,#e6ffef,#e0ffef);border-color:#1fa06a;box-shadow:0 10px 26px rgba(31,160,106,0.08)}
+.option.wrong{background:linear-gradient(90deg,#ffecec,#ffeaea);border-color:#cc4a4a;box-shadow:0 10px 26px rgba(204,74,74,0.06)}
+
+.timer{
+  display:flex;gap:8px;align-items:center;font-weight:600;font-family:Orbitron, monospace;
+}
+.progress-bar{height:10px;background:rgba(11,110,246,0.08);border-radius:999px;overflow:hidden}
+.progress-inner{height:100%;width:0%;border-radius:999px;background:linear-gradient(90deg,var(--brand-blue),#59e);transition:width 400ms linear}
+
+/* Score card */
+.side-card{padding:16px;border-radius:12px;position:sticky;top:20px;height:fit-content}
+.score-big{font-size:2.2rem;font-weight:700;font-family:Orbitron,monospace}
+.small-muted{color:var(--muted);font-size:0.9rem}
+
+/* Controls */
+.controls-bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.icon-btn{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px;border:1px solid rgba(0,0,0,0.06);background:transparent;cursor:pointer}
+.icon-btn:focus{outline:none;box-shadow:var(--focus-ring)}
+.skip{background:transparent;color:var(--muted)}
+.finish{background:#0b6ef6;color:white;border:0;padding:10px 14px;border-radius:12px}
+
+/* Result table */
+.summary{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+@media (max-width:680px){ .summary{grid-template-columns:1fr} }
+.stat{padding:14px;border-radius:10px;text-align:center}
+.stat h3{margin:0;font-size:1.4rem}
+.message{padding:12px;border-radius:10px;margin-top:12px}
+
+/* Leaderboard */
+.leaderboard-list{display:flex;flex-direction:column;gap:8px}
+.lb-row{display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:10px;border:1px solid rgba(0,0,0,0.06)}
+
+/* small niceties */
+.fade-in{animation:fadeIn 420ms ease both}
+@keyframes fadeIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+.badge{padding:6px 10px;border-radius:999px;background:rgba(11,110,246,0.08);font-weight:600;color:var(--brand-blue)}
+
+/* Neon accents for dark theme */
+body.theme-dark .logo{background:linear-gradient(135deg,var(--neon-cyan),var(--neon-magenta));box-shadow:0 6px 26px rgba(0,255,240,0.06), 0 0 30px rgba(255,45,149,0.03)}
+body.theme-dark .theme-icon{background:linear-gradient(90deg,#001f2f,#02151f);border-radius:8px;color:#bff;}
+body.theme-dark .option.correct{box-shadow:0 8px 28px rgba(0,255,200,0.08), 0 0 26px rgba(0,255,200,0.06)}
+body.theme-dark .option.wrong{box-shadow:0 6px 18px rgba(255,60,80,0.06), 0 0 18px rgba(255,60,80,0.03)}
+body.theme-dark .progress-inner{background:linear-gradient(90deg,var(--neon-cyan),var(--neon-magenta))}
+
+/* keyboard focus */
+[tabindex]:focus{outline:none;box-shadow:var(--focus-ring);border-radius:8px}
+
+footer{margin-top:14px;text-align:center;color:var(--muted);font-size:0.9rem}
+
+/* small screens adjustments */
+@media (max-width:520px){
+  .header{flex-direction:column;align-items:flex-start;gap:12px}
+  .header-actions{width:100%;justify-content:space-between}
+  .title{font-size:1rem}
+  .logo{width:46px;height:46px}
+}
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <!-- Header -->
+  <header class="header" role="banner">
+    <div class="brand" aria-label="Dooit brand">
+      <div class="logo" aria-hidden="true">D</div>
+      <div>
+        <div class="title">Dooit</div>
+        <div style="font-size:0.9rem;color:var(--muted)">Smart practice & mock tests</div>
+      </div>
+    </div>
+
+    <div class="header-actions">
+      <div class="controls" id="topControls">
+        <!-- Shown after login -->
+      </div>
+      <button id="themeToggle" class="theme-toggle" title="Toggle theme" aria-pressed="false">
+        <span class="theme-icon" id="themeIcon"><i class="fa-solid fa-sun"></i></span>
+        <span class="small muted">Theme</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- AUTH VIEW -->
+  <main id="authView" class="card glass fade-in" aria-live="polite">
+    <div style="display:flex;align-items:stretch;gap:18px;flex-wrap:wrap">
+      <div style="flex:1;min-width:280px">
+        <h2 style="margin:0 0 6px 0">Welcome to Dooit</h2>
+        <p class="small-muted" style="margin-top:0">Sign up or log in to start timed practice tests. Works fully offline.</p>
+
+        <div class="auth-wrap" style="margin-top:18px">
+          <!-- Signup -->
+          <div class="glass" style="min-width:260px;">
+            <h3 style="margin-top:0">Create account</h3>
+            <form id="signupForm" aria-label="Signup form">
+              <div class="form-row">
+                <label for="su_name">Full name</label>
+                <input id="su_name" type="text" required placeholder="Your name" />
+              </div>
+              <div class="form-row">
+                <label for="su_email">Email</label>
+                <input id="su_email" type="email" required placeholder="you@example.com" />
+              </div>
+              <div class="form-row">
+                <label for="su_pass">Password</label>
+                <input id="su_pass" type="password" required placeholder="Choose a password" />
+                <div class="small small-muted">Password must be 6+ characters</div>
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+                <button class="btn" type="submit">Sign up</button>
+                <button type="button" id="toLogin" class="btn ghost">Already have account</button>
+              </div>
+              <div id="signupMsg" class="small-muted small" style="margin-top:8px"></div>
+            </form>
+          </div>
+
+          <!-- Login -->
+          <div class="glass" style="min-width:260px;">
+            <h3 style="margin-top:0">Log in</h3>
+            <form id="loginForm" aria-label="Login form">
+              <div class="form-row">
+                <label for="li_email">Email</label>
+                <input id="li_email" type="email" required placeholder="you@example.com" />
+              </div>
+              <div class="form-row">
+                <label for="li_pass">Password</label>
+                <input id="li_pass" type="password" required placeholder="Your password" />
+              </div>
+              <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+                <button class="btn" type="submit">Log in</button>
+                <button type="button" id="demo" class="btn ghost" title="Demo account">Quick demo</button>
+              </div>
+              <div id="loginMsg" class="small-muted small" style="margin-top:8px"></div>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <aside style="width:320px;min-width:240px">
+        <div class="card" style="padding:16px;">
+          <h4 style="margin:0 0 8px 0">Why Dooit?</h4>
+          <ul style="margin:0;padding-left:18px;color:var(--muted)">
+            <li>Timed mock tests with live scoring and review.</li>
+            <li>Local leaderboard — track progress.</li>
+            <li>Two themes: Light & Dark neon for focus.</li>
+          </ul>
+          <div style="margin-top:12px">
+            <button class="btn" id="learnBtn">Quick tour</button>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <!-- DASHBOARD (protected) -->
+  <section id="dashboardView" class="card" style="display:none" aria-hidden="true">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h2 id="dashGreeting" style="margin:0"></h2>
+        <div class="small-muted" id="userEmail"></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button id="gotoLeaderboard" class="btn ghost" title="Leaderboard"><i class="fa-solid fa-trophy"></i>&nbsp;Leaderboard</button>
+        <button id="logoutBtn" class="btn ghost" title="Logout"><i class="fa-solid fa-right-from-bracket"></i>&nbsp;Logout</button>
+      </div>
+    </div>
+
+    <hr style="margin:14px 0;border:none;border-top:1px solid rgba(0,0,0,0.06)">
+
+    <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:stretch">
+      <div style="flex:1;min-width:260px">
+        <h3 style="margin:0 0 8px 0">Select a Test</h3>
+        <p class="small-muted" style="margin-top:0">Choose a category — tests randomly pick up to 10 questions.</p>
+
+        <div class="grid" id="testGrid" style="margin-top:12px" aria-live="polite">
+          <!-- Test cards inserted here -->
+        </div>
+      </div>
+
+      <aside style="width:320px;min-width:240px">
+        <div class="side-card card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="small-muted">Practice Streak</div>
+              <div style="font-weight:700;font-size:1.6rem" id="streakCount">0</div>
+            </div>
+            <div style="text-align:right">
+              <div class="small-muted">Best Score</div>
+              <div class="badge" id="bestScoreBadge">--</div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px">
+            <button id="viewLeaderboard" class="btn" style="width:100%">View Leaderboard</button>
+          </div>
+
+          <div style="margin-top:12px" class="small-muted">
+            Tip: Use the theme toggle top-right to switch Dark Neon for focused practice.
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- QUIZ VIEW -->
+  <section id="quizView" style="display:none" aria-hidden="true" class="fade-in">
+    <div class="quiz-wrap">
+      <div>
+        <div class="question-card card" id="questionCard" role="region" aria-live="polite">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="small-muted" id="qMeta"></div>
+              <h3 id="questionText" style="margin:6px 0 0 0"></h3>
+            </div>
+            <div style="text-align:right">
+              <div class="timer" aria-hidden="false"><span id="timerDisplay">00</span>s</div>
+              <div style="width:180px;margin-top:8px">
+                <div class="progress-bar" aria-hidden="true">
+                  <div class="progress-inner" id="timeProgress"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="options" id="optionsList" role="listbox" aria-label="Answer options" tabindex="0">
+            <!-- Options inserted here -->
+          </div>
+
+          <div class="controls-bar" style="margin-top:16px">
+            <button class="icon-btn" id="prevBtn" aria-label="Previous question"><i class="fa-solid fa-chevron-left"></i> Prev</button>
+            <button class="icon-btn skip" id="skipBtn" aria-label="Skip question"><i class="fa-solid fa-forward"></i> Skip</button>
+            <div style="flex:1"></div>
+            <button class="icon-btn" id="nextBtn" aria-label="Next question">Next <i class="fa-solid fa-chevron-right"></i></button>
+            <button class="finish" id="finishBtn" aria-label="Finish test">Finish</button>
+          </div>
+        </div>
+
+        <!-- pagination / progress -->
+        <div style="margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <div style="min-width:160px">
+            <div class="small-muted">Progress</div>
+            <div class="progress-bar" style="margin-top:6px">
+              <div class="progress-inner" id="quizProgress" style="width:0%"></div>
+            </div>
+          </div>
+          <div style="margin-left:auto;text-align:right">
+            <div class="small-muted">Live Score</div>
+            <div class="score-big" id="liveScore">0</div>
+          </div>
+        </div>
+      </div>
+
+      <aside style="width:320px;min-width:240px">
+        <div class="card side-card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div class="small-muted">Category</div>
+              <div style="font-weight:700" id="quizCategory">--</div>
+            </div>
+            <div style="text-align:right">
+              <div class="small-muted">Questions</div>
+              <div id="quizCount">0</div>
+            </div>
+          </div>
+
+          <div style="margin-top:12px">
+            <div class="small-muted">Question Navigator</div>
+            <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px" id="navigator">
+              <!-- numbered buttons -->
+            </div>
+          </div>
+
+          <div style="margin-top:12px">
+            <div class="small-muted">Legend</div>
+            <div style="display:flex;gap:8px;margin-top:8px">
+              <div class="badge">Answered</div>
+              <div class="badge" style="background:rgba(255,90,90,0.08;color:#cc4a4a">Wrong</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- RESULT VIEW -->
+  <section id="resultView" class="card" style="display:none" aria-hidden="true">
+    <h2 style="margin-top:0">Test Summary</h2>
+    <div class="summary" id="summaryStats">
+      <!-- stats filled -->
+    </div>
+
+    <div id="resultMessage" class="message"></div>
+
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+      <button class="btn" id="reviewBtn">Review Answers</button>
+      <button class="btn ghost" id="retakeBtn">Retake</button>
+      <button class="btn ghost" id="backDashBtn">Back to Dashboard</button>
+    </div>
+  </section>
+
+  <!-- REVIEW VIEW -->
+  <section id="reviewView" class="card" style="display:none" aria-hidden="true">
+    <h2 style="margin-top:0">Review Answers</h2>
+    <div id="reviewList" style="display:grid;gap:12px;margin-top:12px">
+      <!-- expanded Qs -->
+    </div>
+    <div style="margin-top:12px">
+      <button class="btn ghost" id="reviewBack">Back to Results</button>
+    </div>
+  </section>
+
+  <!-- LEADERBOARD -->
+  <section id="leaderboardView" class="card" style="display:none" aria-hidden="true">
+    <h2 style="margin-top:0">Local Leaderboard</h2>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center">
+      <div style="flex:1;min-width:220px">
+        <div class="small-muted">Top Scores (local)</div>
+        <div class="leaderboard-list" id="leaderboardList" style="margin-top:12px"></div>
+      </div>
+      <div style="width:260px;min-width:220px">
+        <div class="small-muted">Save my latest result</div>
+        <div style="margin-top:8px">
+          <button class="btn" id="saveLatest">Save Latest Result</button>
+          <button class="btn ghost" id="clearBoard">Clear Leaderboard</button>
+        </div>
+      </div>
+    </div>
+    <div style="margin-top:12px">
+      <button class="btn ghost" id="lbBack">Back</button>
+    </div>
+  </section>
+
+  <footer>
+    <div>Built with ❤️ — Dooit local demo. No servers, data stored in LocalStorage (keys: dooit_*).</div>
+  </footer>
+</div>
+
+<script>
+/* --------------------------
+   Dooit App Script
+   - All UI behavior, auth, quiz engine, leaderboard
+   - LocalStorage prefix: "dooit_"
+   -------------------------- */
+
+const LS_PREFIX = 'dooit_'; // localStorage prefix
+const LS_USERS = LS_PREFIX + 'users';      // stores array of users {name,email,pass}
+const LS_SESSION = LS_PREFIX + 'session';  // stores logged in email
+const LS_BOARD = LS_PREFIX + 'leaderboard';// stores array of results
+const LS_THEME = LS_PREFIX + 'theme';      // 'light' or 'dark'
+const LS_STREAK = LS_PREFIX + 'streak';    // optional: practice streak count
+
+// ----------------------
+// Sample question bank
+// Expand here: add more questions per category.
+// Each question: {q: string, options: [..], answer: index (0-based), explanation?: string}
+const QUESTION_BANK = {
+  NEET: [
+    { q: "Which vitamin is essential for bone mineralization?", options: ["Vitamin A","Vitamin C","Vitamin D","Vitamin K"], answer: 2, explanation: "Vitamin D aids calcium absorption." },
+    { q: "Blood cells are produced in:", options: ["Heart","Liver","Bone marrow","Kidney"], answer: 2 },
+    { q: "Which hormone regulates blood sugar?", options: ["Insulin","Thyroxine","Adrenaline","Cortisol"], answer: 0 }
+  ],
+  JEE: [
+    { q: "If f(x)=x^2, what is f'(x)?", options: ["2x","x","x^2","1"], answer: 0 },
+    { q: "Unit of electric current is:", options: ["Volt","Ohm","Ampere","Watt"], answer: 2 },
+    { q: "Which gas has the highest thermal conductivity?", options:["Helium","Hydrogen","Nitrogen","Oxygen"], answer: 1 }
+  ],
+  BIO: [
+    { q: "DNA stands for:", options: ["Deoxyribonucleic acid","Ribonucleic acid","Deoxyribose nucleic acid","None"], answer: 0 },
+    { q: "Photosynthesis occurs in:", options: ["Mitochondria","Chloroplast","Ribosome","Nucleus"], answer: 1 },
+    { q: "Which blood group is universal donor?", options:["AB+","O-","A+","B-"], answer: 1 }
+  ],
+  PHYSICS: [
+    { q: "Speed of light in vacuum (approx):", options: ["3x10^8 m/s","3x10^6 m/s","3x10^5 m/s","300 m/s"], answer: 0 },
+    { q: "SI unit of Force:", options:["Joule","Newton","Pascal","Watt"], answer: 1 },
+    { q: "Ohm's law relates:", options:["V=IR","P=VI","E=mc^2","F=ma"], answer: 0 }
+  ],
+  MATH: [
+    { q: "Value of π (approx):", options:["3.1416","2.718","1.618","3.0"], answer: 0 },
+    { q: "Derivative of sin(x) is:", options:["cos(x)","-sin(x)","tan(x)","-cos(x)"], answer: 0 },
+    { q: "Integral of 1/x dx is:", options:["ln|x|","x","e^x","1/x^2"], answer: 0 }
+  ],
+  CHEMISTRY: [
+    { q: "pH of neutral water at 25°C:", options:["7","0","14","1"], answer: 0 },
+    { q: "Atomic number equals number of:", options:["Neutrons","Protons","Electrons","Nucleons"], answer: 1 },
+    { q: "Covalent bond involves:", options:["Sharing electrons","Transfer of electrons","Ion formation","Metallic bonding"], answer: 0 }
+  ],
+  "FULL SYLLABUS": [
+    { q: "Sample full-syllabus question: Which process produces ATP?", options:["Photosynthesis","Fermentation","Cellular respiration","Diffusion"], answer: 2 },
+    { q: "What is 2+2*2?", options:["6","8","4","2"], answer: 0 },
+    { q: "Which element has symbol 'O'?", options:["Gold","Oxygen","Osmium","Iron"], answer: 1 }
+  ]
+};
+
+// ----------------------
+// App State (runtime)
+let state = {
+  user: null, // {name,email}
+  currentQuiz: null, // {category, questions:[], answers:[], timePerQ, startTime, etc.}
+  timer: null,
+};
+
+// Utility - LocalStorage helpers
+function lsGet(key, fallback=null){
+  try{
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  }catch(e){ return fallback; }
+}
+function lsSet(key, value){
+  localStorage.setItem(key, JSON.stringify(value));
+}
+function lsRemove(key){ localStorage.removeItem(key); }
+
+// Initialization
+document.addEventListener('DOMContentLoaded', () => {
+  bindUI();
+  applySavedTheme();
+  checkSessionOnLoad();
+  renderTestGrid();
+  renderLeaderBoard();
+});
+
+/* -----------------------
+   UI Bindings and Views
+   ----------------------- */
+function bindUI(){
+  // Auth forms
+  document.getElementById('signupForm').addEventListener('submit', onSignup);
+  document.getElementById('loginForm').addEventListener('submit', onLogin);
+  document.getElementById('toLogin').addEventListener('click', () => {
+    document.getElementById('li_email').focus();
+  });
+  document.getElementById('demo').addEventListener('click', createDemoAndLogin);
+
+  // Theme toggle
+  document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+
+  // Dashboard buttons
+  document.getElementById('logoutBtn').addEventListener('click', onLogout);
+  document.getElementById('viewLeaderboard').addEventListener('click', showLeaderboard);
+  document.getElementById('gotoLeaderboard').addEventListener('click', showLeaderboard);
+
+  // Quiz navigation
+  document.getElementById('prevBtn').addEventListener('click', onPrev);
+  document.getElementById('nextBtn').addEventListener('click', onNext);
+  document.getElementById('skipBtn').addEventListener('click', onSkip);
+  document.getElementById('finishBtn').addEventListener('click', onFinishClick);
+
+  // Result controls
+  document.getElementById('reviewBtn').addEventListener('click', showReview);
+  document.getElementById('retakeBtn').addEventListener('click', retakeQuiz);
+  document.getElementById('backDashBtn').addEventListener('click', backToDash);
+
+  // Review
+  document.getElementById('reviewBack').addEventListener('click', () => {
+    showView('resultView');
+  });
+
+  // Leaderboard
+  document.getElementById('lbBack').addEventListener('click', backToDash);
+  document.getElementById('saveLatest').addEventListener('click', saveLatestResult);
+  document.getElementById('clearBoard').addEventListener('click', clearLeaderboard);
+
+  // Small helpers
+  document.getElementById('learnBtn').addEventListener('click', ()=>alert('Dooit: Local mock tests. Create account, choose category and start. Results saved locally.'));
+}
+
+/* -----------------------
+   AUTH: Signup, Login, Session
+   ----------------------- */
+
+function onSignup(e){
+  e.preventDefault();
+  const name = document.getElementById('su_name').value.trim();
+  const email = document.getElementById('su_email').value.trim().toLowerCase();
+  const pass = document.getElementById('su_pass').value;
+
+  const msgEl = document.getElementById('signupMsg');
+  msgEl.textContent = '';
+
+  if(!name || !validateEmail(email) || pass.length < 6){
+    msgEl.textContent = 'Please enter valid name, email and password (6+ chars).';
+    return;
+  }
+
+  // load users
+  const users = lsGet(LS_USERS, []);
+  // duplicate email?
+  if(users.some(u => u.email === email)){
+    msgEl.textContent = 'An account with this email already exists. Please log in.';
+    return;
+  }
+
+  // store user
+  users.push({ name, email, pass });
+  lsSet(LS_USERS, users);
+  msgEl.textContent = 'Account created. Logging in...';
+
+  // auto login
+  setTimeout(()=> {
+    setSession(email);
+    loadUser(email);
+    showDashboard();
+  }, 700);
+}
+
+function onLogin(e){
+  e.preventDefault();
+  const email = document.getElementById('li_email').value.trim().toLowerCase();
+  const pass = document.getElementById('li_pass').value;
+  const msgEl = document.getElementById('loginMsg');
+  msgEl.textContent = '';
+
+  if(!validateEmail(email)){
+    msgEl.textContent = 'Please provide a valid email.';
+    return;
+  }
+  const users = lsGet(LS_USERS, []);
+  const user = users.find(u => u.email === email && u.pass === pass);
+  if(!user){
+    msgEl.textContent = 'Invalid credentials. Try demo account or sign up.';
+    return;
+  }
+  setSession(email);
+  loadUser(email);
+  showDashboard();
+}
+
+function validateEmail(e){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
+function setSession(email){
+  lsSet(LS_SESSION, { email });
+}
+
+function clearSession(){
+  lsRemove(LS_SESSION);
+  state.user = null;
+}
+
+function loadUser(email){
+  const users = lsGet(LS_USERS, []);
+  const u = users.find(x=>x.email===email);
+  if(u){
+    state.user = { name: u.name, email: u.email };
+    document.getElementById('dashGreeting').textContent = `Hello, ${u.name.split(' ')[0] || u.name}`;
+    document.getElementById('userEmail').textContent = u.email;
+    // update header controls
+    renderTopControls();
+  }
+}
+
+function checkSessionOnLoad(){
+  const session = lsGet(LS_SESSION, null);
+  if(session && session.email){
+    loadUser(session.email);
+    showDashboard();
+  }else{
+    showView('authView');
+  }
+}
+
+function onLogout(){
+  if(!confirm('Are you sure you want to logout?')) return;
+  clearSession();
+  showView('authView');
+}
+
+/* Demo account quick setup */
+function createDemoAndLogin(){
+  // create demo user if not exists
+  const users = lsGet(LS_USERS, []);
+  let demo = users.find(u => u.email === 'demo@dooit.local');
+  if(!demo){
+    demo = { name: 'Demo User', email: 'demo@dooit.local', pass: 'demo123' };
+    users.push(demo);
+    lsSet(LS_USERS, users);
+  }
+  setSession(demo.email);
+  loadUser(demo.email);
+  showDashboard();
+}
+
+/* -----------------------
+   Theme handling
+   ----------------------- */
+function applySavedTheme(){
+  const theme = lsGet(LS_THEME, 'light');
+  if(theme === 'dark') {
+    document.body.classList.add('theme-dark');
+    document.getElementById('themeToggle').setAttribute('aria-pressed','true');
+    document.getElementById('themeIcon').innerHTML = '<i class="fa-solid fa-moon"></i>';
+  } else {
+    document.body.classList.remove('theme-dark');
+    document.getElementById('themeToggle').setAttribute('aria-pressed','false');
+    document.getElementById('themeIcon').innerHTML = '<i class="fa-solid fa-sun"></i>';
+  }
+}
+
+function toggleTheme(){
+  const isDark = document.body.classList.toggle('theme-dark');
+  lsSet(LS_THEME, isDark ? 'dark' : 'light');
+  applySavedTheme();
+}
+
+/* -----------------------
+   Render top header controls (after login)
+   ----------------------- */
+function renderTopControls(){
+  const top = document.getElementById('topControls');
+  top.innerHTML = '';
+  if(state.user){
+    const el = document.createElement('div');
+    el.style.display = 'flex'; el.style.gap='8px'; el.style.alignItems='center';
+    const name = document.createElement('div');
+    name.className = 'small-muted';
+    name.textContent = state.user.name;
+    const avatar = document.createElement('div');
+    avatar.className = 'badge';
+    avatar.textContent = (state.user.name || 'U').split(' ').map(s=>s[0]).slice(0,2).join('');
+    el.appendChild(avatar);
+    el.appendChild(name);
+    top.appendChild(el);
+  }
+}
+
+/* -----------------------
+   Test Grid (categories)
+   ----------------------- */
+function renderTestGrid(){
+  const grid = document.getElementById('testGrid');
+  grid.innerHTML = '';
+  const categories = Object.keys(QUESTION_BANK);
+  categories.forEach(cat => {
+    const card = document.createElement('div');
+    card.className = 'test-card';
+    card.setAttribute('role','button');
+    card.setAttribute('tabindex','0');
+    card.setAttribute('aria-pressed','false');
+
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:700">${cat}</div>
+          <div class="small-muted">${QUESTION_BANK[cat].length} questions available</div>
+        </div>
+        <div style="text-align:right">
+          <div class="small-muted">Time/q</div>
+          <div style="font-weight:700">20s</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button class="btn" data-cat="${cat}">Start</button>
+        <button class="btn ghost" data-cat="${cat}" data-action="preview">Preview</button>
+      </div>
+    `;
+    grid.appendChild(card);
+
+    card.querySelectorAll('button').forEach(btn=>{
+      btn.addEventListener('click', (e)=>{
+        const cat = btn.dataset.cat;
+        const action = btn.dataset.action || 'start';
+        if(action === 'preview'){
+          alert(`Category: ${cat}\nQuestions: ${QUESTION_BANK[cat].length}\n(Preview mode not implemented — start test to try.)`);
+        }else{
+          if(!state.user){ alert('Please log in to start tests.'); showView('authView'); return; }
+          startQuiz(cat);
+        }
+      });
+    });
+
+    card.addEventListener('keydown', (e)=>{
+      if(e.key === 'Enter' || e.key === ' '){
+        card.querySelector('button').click();
+      }
+    });
+  });
+}
+
+/* -----------------------
+   Quiz Engine
+   ----------------------- */
+
+function startQuiz(category){
+  // Prepare questions: randomize and pick up to 10
+  const bank = QUESTION_BANK[category] || [];
+  const available = bank.length;
+  const needed = Math.min(10, available);
+  // Shuffle and pick
+  const shuffled = [...bank].sort(()=>Math.random()-0.5).slice(0, needed);
+  // Build questions with metadata
+  const questions = shuffled.map((q, idx) => ({
+    id: idx+1,
+    q: q.q,
+    options: q.options,
+    answer: q.answer,
+    explanation: q.explanation || '',
+  }));
+  // Initialize answers array: null => unanswered, -1 => marked wrong (timeout/skip), 0..n => selected index
+  const answers = new Array(questions.length).fill(null);
+  state.currentQuiz = {
+    category,
+    questions,
+    answers,
+    currentIndex: 0,
+    timePerQuestion: 20, // seconds per question
+    startTime: Date.now(),
+    finished: false,
+    savedResult: null
+  };
+
+  // If not enough questions, notify user
+  if(available < 10){
+    alert(`Note: category "${category}" has only ${available} question(s). The test will use all available questions.`);
+  }
+
+  // Render quiz UI and start timer
+  renderQuizView();
+  startQuestionTimer();
+  showView('quizView');
+}
+
+function renderQuizView(){
+  const quiz = state.currentQuiz;
+  if(!quiz) return;
+  document.getElementById('quizCategory').textContent = quiz.category;
+  document.getElementById('quizCount').textContent = `${quiz.questions.length}`;
+  renderQuestion(quiz.currentIndex);
+  renderNavigator();
+  updateLiveScore();
+  updateProgress();
+}
+
+function renderQuestion(index){
+  const quiz = state.currentQuiz;
+  const qObj = quiz.questions[index];
+  // meta
+  document.getElementById('qMeta').textContent = `Q ${index+1} of ${quiz.questions.length}`;
+  document.getElementById('questionText').innerHTML = qObj.q;
+  // options
+  const optionsList = document.getElementById('optionsList');
+  optionsList.innerHTML = '';
+  qObj.options.forEach((opt, i) => {
+    const div = document.createElement('div');
+    div.className = 'option';
+    div.setAttribute('role','button');
+    div.setAttribute('tabindex','0');
+    div.dataset.index = i;
+    div.innerHTML = `<div style="font-weight:700">${String.fromCharCode(65+i)}</div><div>${opt}</div>`;
+    // keyboard + click
+    div.addEventListener('click', ()=>onSelectOption(i));
+    div.addEventListener('keydown', (e)=>{ if(e.key==='Enter') onSelectOption(i) });
+    optionsList.appendChild(div);
+  });
+
+  // highlight previously selected or timeout-marked
+  const ans = quiz.answers[index];
+  if(ans !== null && ans !== undefined){
+    if(ans === -1){
+      // previously timed out/skip: mark wrong visually
+      markOptionVisual(null, false);
+    } else {
+      markOptionVisual(ans, ans === qObj.answer);
+    }
+  }
+}
+
+/* Mark option indexes as correct/wrong visually */
+function markOptionVisual(selectedIndex, correct){
+  const options = document.querySelectorAll('#optionsList .option');
+  options.forEach((el, idx)=>{
+    el.classList.remove('correct','wrong');
+    el.setAttribute('aria-pressed','false');
+    if(selectedIndex !== null && selectedIndex === idx){
+      el.setAttribute('aria-pressed','true');
+      if(correct) el.classList.add('correct');
+      else el.classList.add('wrong');
+    } else {
+      // Also highlight correct answer after selection/timeout
+      const qObj = state.currentQuiz.questions[state.currentQuiz.currentIndex];
+      if(selectedIndex !== null){
+        if(idx === qObj.answer) el.classList.add('correct');
+      }
+    }
+  });
+}
+
+/* Option selection */
+function onSelectOption(optionIndex){
+  const quiz = state.currentQuiz;
+  if(!quiz) return;
+  const ci = quiz.currentIndex;
+  const qObj = quiz.questions[ci];
+
+  // record
+  quiz.answers[ci] = optionIndex;
+  // update view
+  markOptionVisual(optionIndex, optionIndex === qObj.answer);
+
+  // stop current question timer and schedule auto advance
+  clearQuestionTimer();
+  // play short delay to show feedback
+  setTimeout(()=>{
+    // advance to next automatically if not last, else show result prompt or finish
+    if(ci < quiz.questions.length - 1){
+      quiz.currentIndex++;
+      renderQuestion(quiz.currentIndex);
+      renderNavigator();
+      startQuestionTimer();
+    } else {
+      // last question - show finish dialog or auto show result
+      setTimeout(()=> showResult(), 600);
+    }
+    updateLiveScore();
+    updateProgress();
+  }, 1500); // 1.5s pause per requirements
+}
+
+/* Timer management per question */
+function startQuestionTimer(){
+  const quiz = state.currentQuiz;
+  if(!quiz) return;
+  let remaining = quiz.timePerQuestion;
+  const display = document.getElementById('timerDisplay');
+  const progress = document.getElementById('timeProgress');
+  // initialize visual
+  display.textContent = remaining;
+  const total = quiz.timePerQuestion;
+  progress.style.width = '100%';
+  // clear previous
+  clearQuestionTimer();
+  // tick every 1s
+  state.timer = setInterval(()=>{
+    remaining--;
+    display.textContent = remaining;
+    const percent = Math.max(0, (remaining/total)*100);
+    progress.style.width = percent + '%';
+    if(remaining <= 0){
+      // mark as wrong (unattempted) and auto advance
+      clearQuestionTimer();
+      handleTimeoutForCurrent();
+    }
+  }, 1000);
+}
+
+function clearQuestionTimer(){
+  if(state.timer){
+    clearInterval(state.timer);
+    state.timer = null;
+  }
+}
+
+function handleTimeoutForCurrent(){
+  const qi = state.currentQuiz;
+  const idx = qi.currentIndex;
+  // per requirements: unattempted on timeout counts as wrong => we use -1 sentinel
+  if(qi.answers[idx] === null){
+    qi.answers[idx] = -1;
+  }
+  // show correct/wrong highlight
+  markOptionVisual(null, false);
+  // auto advance after short delay
+  setTimeout(()=> {
+    if(idx < qi.questions.length - 1){
+      qi.currentIndex++;
+      renderQuestion(qi.currentIndex);
+      renderNavigator();
+      startQuestionTimer();
+    } else {
+      // last timed out -> show result
+      showResult();
+    }
+    updateLiveScore();
+    updateProgress();
+  }, 1500);
+}
+
+/* Navigator (numbered buttons) */
+function renderNavigator(){
+  const nav = document.getElementById('navigator');
+  nav.innerHTML = '';
+  const quiz = state.currentQuiz;
+  quiz.questions.forEach((q, i)=>{
+    const b = document.createElement('button');
+    b.className = 'icon-btn';
+    b.style.minWidth = '36px';
+    b.textContent = i+1;
+    b.title = `Go to question ${i+1}`;
+    b.addEventListener('click', ()=> {
+      // stop timer for current, move to selected
+      clearQuestionTimer();
+      quiz.currentIndex = i;
+      renderQuestion(i);
+      renderNavigator();
+      startQuestionTimer();
+    });
+    if(quiz.answers[i] !== null){
+      b.style.background = 'linear-gradient(90deg,var(--brand-blue),#59e)';
+      b.style.color = 'white';
+    }
+    nav.appendChild(b);
+  });
+}
+
+/* Prev / Next / Skip / Finish handlers */
+function onPrev(){
+  clearQuestionTimer();
+  const quiz = state.currentQuiz;
+  if(quiz.currentIndex > 0){
+    quiz.currentIndex--;
+    renderQuestion(quiz.currentIndex);
+    renderNavigator();
+    startQuestionTimer();
+  }
+}
+function onNext(){
+  clearQuestionTimer();
+  const quiz = state.currentQuiz;
+  if(quiz.currentIndex < quiz.questions.length - 1){
+    quiz.currentIndex++;
+    renderQuestion(quiz.currentIndex);
+    renderNavigator();
+    startQuestionTimer();
+  }
+}
+function onSkip(){
+  // skip counts as wrong per requirements
+  const quiz = state.currentQuiz;
+  const idx = quiz.currentIndex;
+  if(quiz.answers[idx] === null){
+    quiz.answers[idx] = -1; // marked wrong
+  }
+  // show wrong highlight briefly
+  markOptionVisual(null,false);
+  updateLiveScore();
+  // move next
+  clearQuestionTimer();
+  setTimeout(()=>{
+    if(idx < quiz.questions.length -1){
+      quiz.currentIndex++;
+      renderQuestion(quiz.currentIndex);
+      renderNavigator();
+      startQuestionTimer();
+    } else {
+      showResult();
+    }
+    updateProgress();
+  }, 600);
+}
+function onFinishClick(){
+  if(!confirm('Are you sure you want to finish the test early? This will submit your current answers.')) return;
+  showResult();
+}
+
+/* Live score calculation */
+function updateLiveScore(){
+  const quiz = state.currentQuiz;
+  if(!quiz) return;
+  let score = 0;
+  let correct = 0, wrong = 0, unattempted = 0;
+  quiz.answers.forEach((a, i)=>{
+    if(a === null){ unattempted++; } // not yet touched
+    else if(a === -1){ wrong++; score -= 1; }
+    else {
+      if(a === quiz.questions[i].answer){ correct++; score += 4; }
+      else { wrong++; score -= 1; }
+    }
+  });
+  document.getElementById('liveScore').textContent = score;
+}
+
+/* Progress bar update */
+function updateProgress(){
+  const quiz = state.currentQuiz;
+  if(!quiz) return;
+  const done = quiz.answers.filter(a=>a!==null).length;
+  const percent = Math.round((done / quiz.questions.length) * 100);
+  document.getElementById('quizProgress').style.width = percent + '%';
+}
+
+/* -----------------------
+   Result calculation and view
+   ----------------------- */
+function showResult(){
+  clearQuestionTimer();
+  const quiz = state.currentQuiz;
+  if(!quiz) return;
+  // finalize unanswered as wrong? Requirement: unattempted at time end or skip counts as wrong.
+  // We will consider remaining nulls as wrong at submission time.
+  quiz.answers = quiz.answers.map(a => a === null ? -1 : a);
+  // score summary
+  let correct = 0, wrong = 0, totalScore = 0;
+  quiz.answers.forEach((a, i)=>{
+    if(a === -1){ wrong++; totalScore -= 1; }
+    else if(a === quiz.questions[i].answer){ correct++; totalScore += 4; }
+    else { wrong++; totalScore -= 1; }
+  });
+  const total = quiz.questions.length;
+  const unattempted = quiz.answers.filter(a=>a===-1).length;
+  const percent = Math.max(0, Math.round((totalScore / (total*4)) * 100)); // relative to max positive
+  const timeTakenSec = Math.round((Date.now() - quiz.startTime)/1000);
+
+  const summaryEl = document.getElementById('summaryStats');
+  summaryEl.innerHTML = '';
+  const statHtml = [
+    {title:'Correct', val: correct},
+    {title:'Wrong', val: wrong},
+    {title:'Unattempted (counted wrong)', val: unattempted},
+    {title:'Negative marks', val: Math.min(0, totalScore) < 0 ? (totalScore < 0 ? (totalScore - (totalScore*2)) : 0) : 0}, // show negative magnitude
+    {title:'Total score', val: totalScore},
+    {title:'Percentage', val: percent + '%'}
+  ];
+  statHtml.forEach(s=>{
+    const div = document.createElement('div');
+    div.className = 'stat card';
+    div.innerHTML = `<h3>${s.val}</h3><div class="small-muted">${s.title}</div>`;
+    summaryEl.appendChild(div);
+  });
+
+  // message
+  const msgEl = document.getElementById('resultMessage');
+  let msg = '';
+  if(percent >= 80) msg = 'Excellent — outstanding performance!';
+  else if(percent >= 50) msg = 'Good — keep practicing to improve further.';
+  else msg = 'Keep Practicing — review mistakes and try again.';
+  msgEl.textContent = `${msg} Time: ${formatTime(timeTakenSec)}.`;
+
+  // save result to quiz state for potential save to leaderboard
+  quiz.savedResult = {
+    name: state.user ? state.user.name : 'Anonymous',
+    email: state.user ? state.user.email : 'anonymous',
+    category: quiz.category,
+    score: totalScore,
+    percent,
+    totalQuestions: total,
+    timeTakenSec,
+    date: new Date().toISOString(),
+    answers: quiz.answers,
+    questions: quiz.questions
+  };
+
+  // update streak / best
+  updateStreakAndBest(quiz.savedResult);
+
+  // show view
+  showView('resultView');
+  state.currentQuiz.finished = true;
+}
+
+/* Update streak count and best score badge (simple local) */
+function updateStreakAndBest(result){
+  // increment streak
+  const prev = lsGet(LS_STREAK, 0);
+  lsSet(LS_STREAK, prev + 1);
+  document.getElementById('streakCount').textContent = prev + 1;
+
+  // update best local score badge or show placeholder
+  let lb = lsGet(LS_BOARD, []);
+  // compute best for this user
+  const best = lb.filter(r => r.email === result.email).sort((a,b)=>b.score - a.score)[0];
+  document.getElementById('bestScoreBadge').textContent = best ? `${best.score}` : `${result.score}`;
+}
+
+/* Save latest result to leaderboard (local) */
+function saveLatestResult(){
+  const quiz = state.currentQuiz;
+  if(!quiz || !quiz.savedResult) { alert('No recent result to save.'); return; }
+  const board = lsGet(LS_BOARD, []);
+  board.push(quiz.savedResult);
+  // sort by score desc
+  board.sort((a,b)=>b.score - a.score);
+  lsSet(LS_BOARD, board);
+  alert('Result saved to local leaderboard.');
+  renderLeaderBoard();
+}
+
+/* Render leaderboard UI */
+function renderLeaderBoard(){
+  const list = document.getElementById('leaderboardList');
+  list.innerHTML = '';
+  const board = lsGet(LS_BOARD, []);
+  if(board.length === 0){
+    list.innerHTML = '<div class="small-muted">No saved results yet.</div>';
+    return;
+  }
+  // show top 10
+  board.slice(0,10).forEach((row,i)=>{
+    const el = document.createElement('div');
+    el.className = 'lb-row';
+    el.innerHTML = `<div style="display:flex;gap:10px;align-items:center">
+      <div class="badge">${i+1}</div>
+      <div>
+        <div style="font-weight:700">${row.name} <span style="font-weight:600;color:var(--muted);font-size:0.9rem">(${row.category})</span></div>
+        <div class="small-muted" style="font-size:0.85rem">${new Date(row.date).toLocaleString()}</div>
+      </div>
+    </div>
+    <div style="text-align:right">
+      <div style="font-weight:700">${row.score}</div>
+      <div class="small-muted" style="font-size:0.85rem">${row.percent}%</div>
+    </div>`;
+    list.appendChild(el);
+  });
+}
+
+function showLeaderboard(){
+  renderLeaderBoard();
+  showView('leaderboardView');
+}
+
+function clearLeaderboard(){
+  if(!confirm('Clear the local leaderboard? This cannot be undone.')) return;
+  lsSet(LS_BOARD, []);
+  renderLeaderBoard();
+}
+
+/* Back to dashboard */
+function backToDash(){
+  showDashboard();
+}
+
+/* Retake quiz */
+function retakeQuiz(){
+  if(!state.currentQuiz) return;
+  // reset answers and start anew (retain category)
+  startQuiz(state.currentQuiz.category);
+}
+
+/* Review answers */
+function showReview(){
+  const quiz = state.currentQuiz;
+  if(!quiz || !quiz.savedResult) return;
+  const container = document.getElementById('reviewList');
+  container.innerHTML = '';
+  quiz.questions.forEach((q,i)=>{
+    const userAns = quiz.answers[i];
+    const correctIdx = q.answer;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'card';
+    wrapper.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <div style="font-weight:700">Q${i+1}: ${q.q}</div>
+          <div style="font-size:0.95rem;color:var(--muted);margin-top:6px">Your answer: ${userAns===-1 ? 'Unattempted/Skipped' : (userAns===null?'Unattempted':String.fromCharCode(65+userAns)+'. '+q.options[userAns])}</div>
+          <div style="font-size:0.95rem;color:var(--muted);margin-top:4px">Correct answer: ${String.fromCharCode(65+correctIdx)}. ${q.options[correctIdx]}</div>
+          ${q.explanation ? `<div style="margin-top:8px;color:var(--muted)">Explanation: ${q.explanation}</div>` : ''}
+        </div>
+      </div>
+    `;
+    // highlight
+    const optDiv = document.createElement('div');
+    container.appendChild(wrapper);
+  });
+
+  showView('reviewView');
+}
+
+/* -----------------------
+   Misc helpers
+   ----------------------- */
+
+function showDashboard(){
+  document.getElementById('authView').style.display = 'none';
+  document.getElementById('dashboardView').style.display = 'block';
+  document.getElementById('quizView').style.display = 'none';
+  document.getElementById('resultView').style.display = 'none';
+  document.getElementById('reviewView').style.display = 'none';
+  document.getElementById('leaderboardView').style.display = 'none';
+  // update top controls & stats
+  renderTopControls();
+  document.getElementById('streakCount').textContent = lsGet(LS_STREAK, 0);
+  const board = lsGet(LS_BOARD, []);
+  const best = board.filter(r=>r.email=== (state.user ? state.user.email : '')).sort((a,b)=>b.score-a.score)[0];
+  document.getElementById('bestScoreBadge').textContent = best ? best.score : '--';
+  // show dashboard
+  showView('dashboardView');
+}
+
+function showView(id){
+  // Hide all main views first
+  const views = ['authView','dashboardView','quizView','resultView','reviewView','leaderboardView'];
+  views.forEach(v => {
+    const el = document.getElementById(v);
+    if(el) el.style.display = (v === id) ? (v==='authView' ? 'block' : '') : 'none';
+    if(el) el.setAttribute('aria-hidden', v===id ? 'false':'true');
+  });
+
+  // apply some view-specific inits
+  if(id === 'quizView'){
+    // smooth scroll to top of quiz
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+}
+
+/* Format seconds to H:M:S simple */
+function formatTime(sec){
+  const mins = Math.floor(sec/60);
+  const s = sec % 60;
+  if(mins > 0) return `${mins}m ${s}s`;
+  return `${s}s`;
+}
+
+/* Save result automatically on finish? Not auto; user decides to save. But we will add to local saves history quickly if desired. */
+
+/* -----------------------
+   Edge cases & Accessibility notes
+   -----------------------
+   - Duplicate signup prevented in onSignup()
+   - If question bank has <10 q, we alert and use all available
+   - Timer per question handled with state.timer; moving between q stops/starts timer
+   - Keyboard accessible elements use tabindex and role attributes
+   - LocalStorage keys all use "dooit_" prefix (see constants)
+*/
+
+/* -----------------------
+   Initial leader & dashboard render
+   ----------------------- */
+(function initialSetup(){
+  // ensure LS arrays exist
+  if(lsGet(LS_USERS, null) === null) lsSet(LS_USERS, []);
+  if(lsGet(LS_BOARD, null) === null) lsSet(LS_BOARD, []);
+  // set theme default if missing
+  if(lsGet(LS_THEME, null) === null) lsSet(LS_THEME, 'light');
+})();
+
+/* -----------------------
+   Extra: keyboard shortcuts for testing (not required)
+   ----------------------- */
+document.addEventListener('keydown', (e)=>{
+  // ctrl+shift+d opens demo
+  if(e.ctrlKey && e.shiftKey && e.key.toLowerCase()==='d'){ createDemoAndLogin(); }
+});
+</script>
+
+<!--
+CHECKLIST (implemented)
+- Authentication (signup/login with validation, duplicate prevention, localStorage session).
+- Theme Toggle (Light white-blue & Dark Neon), saved in localStorage.
+- Dashboard with test/quiz selection cards for NEET, JEE, BIO, PHYSICS, MATH, CHEMISTRY, FULL SYLLABUS.
+- Quiz view: Question area, option cards, per-question timer (20s), progress bar, live score.
+- Scoring: +4 correct, -1 wrong; unattempted on timeout or skip counts as wrong.
+- Auto-advance 1.5s after answer; correct/wrong highlighted.
+- Prev / Next / Skip / Finish controls with confirmation on early finish.
+- Random per-quiz selection up to 10 questions; uses all available if fewer and alerts user.
+- Result view: correct/wrong/unattempted, negative marks, total score, percentage, time taken, feedback message.
+- Review answers view showing each question with user's answer and correct answer.
+- Leaderboard (local) storing results with name, email, category, score, percent, date/time; can save latest result.
+- Accessibility: semantic HTML, ARIA attributes, keyboard focus and key handlers.
+- Responsive layout for desktop/tablet/mobile; micro-interactions and smooth transitions.
+- All text in English. LocalStorage keys prefixed with "dooit_".
+- Sample question bank included (3 questions per category). Expandable in code comments.
+-->
+
+<!--
+DEPLOY (quick steps)
+
+GitHub Pages (4 steps)
+1. Create a new GitHub repository and push this index.html to the repository (root).
+2. In repo settings > Pages, select branch: main (or gh-pages) and folder: / (root).
+3. Save — GitHub will publish at username.github.io/repo-name within a minute or two.
+4. Open the published URL to access the app.
+
+Render (static site) (4 steps)
+1. Create a new repository containing this index.html (root).
+2. On Render.com create a new Static Site and connect your Git provider + repo.
+3. Build Command: leave blank (static). Publish Directory: /
+4. Deploy — Render will host the static site. Optionally provide a render.yaml if you want custom settings.
+
+(If you prefer multi-file Render with custom headers, create render.yaml in repo root — not required for simple static site.)
+-->
+
+</body>
+</html>
